@@ -1,0 +1,518 @@
+{
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "id":  "http://mgi.nist.gov/mgi-json-trans/v0.1",
+    "$extensionSchemas": [ "http://mgi.nist.gov/mgi-json-schema/v0.1" ],
+    "title": "JSON Transformations",
+    "description": "This is the schema for JSON Transformation stylesheets",
+    "definitions": {
+        "Prefixes": {
+            "description": "a mapping of prefixes to data-pointer values",
+            "type": "object",
+            "patternProperties": {
+                "^[a-zA-Z0-9_!@#$.]+$": { "$ref": "#/definitions/DataPointer" }
+            }
+        },
+        "DataPointer": {
+            "description": "a pointer into JSON data comprised of an optional data target ($in or $context) or prefix, a colon, and a JSON pointer",
+            "type": "string",
+            "pattern": "^([a-zA-Z0-9_!@#$.]:)?(/[a-zA-Z0-9_!@#$.]*)*$"
+        },
+        "Transform": {
+            "description": "a configuration of a transform that can be applied to JSON data structures",
+            "type": "object",
+            "properties": {
+                "$type": {
+                    "description": "the name of the type of template this is.  This determines the other properties used to configure the transform.",
+                    "type": "string",
+                    "pattern": "^([a-zA-Z0-9_!@#$.])+$"
+                },
+                "description": {
+                    "description": "an explanation of what this transform does",
+                    "type": "string"
+                },
+                "notes": {
+                    "description": "a list of additional bits of advice on the use of this transform",
+                    "$ref": "http://mgi.nist.gov/mgi-json-schema/v0.1#/definitions/Notes"
+                },
+                "context": {
+                    "description": "an arbitrary set of named properties that can be accessed while applying a transform",
+                    "notes": [
+                        "The properties will be merged with the current context so that new properities will override existing ones with the same name",
+                        "A transform can be alternatively applied to the context data via a data pointer that begins with '$context:'"
+                    ],
+                    "type": "object"
+                },
+                "expects": { 
+                    "description":  "a list of JSON types that this transform expects",
+                    "type": "array",
+                    "items": { "$ref": "#/definitions/JSONType" },
+                    "uniqueItems": true
+                },
+                "returns": {
+                    "description": "the JSON type that this transform will return after being applied to the input (of an acceptable type)",
+                    "$ref": "#/definitions/JSONType"
+                },
+                "status": {
+                    "description": "a switch that control whether or how this transform can be applied",
+                    "type": "string",
+                    "enum": [ "enabled", "disabled" ],
+                    "valueDocumenation": {
+                        "enabled": {
+                            "description": "the transform is available to be applied"
+                        },
+                        "disabled": {
+                            "description": "the transform is not available to be applied; attempting to do so will result in an error."
+                        }
+                    },
+                    "default": "enabled"
+                },
+                "transforms": {
+                    "description": "a named list of additional transforms available to the current transform",
+                    "notes": [
+                        "These transforms will be merged in with the current set of available transforms, overriding existing ones with the same name"
+                    ],
+                    "type": "object",
+                    "patternProperties": {
+                        "^[a-zA-Z0-9_!@#$.]+$": { "$ref": "#/definitions/Transform" }
+                    }
+                }
+            }
+        },
+        "JSONType": {
+            "description": "a name for a JSON primitive type",
+            "type": "string",
+            "enum": [ "string", "integer", "number", "object", "array", "boolean", "any" ]
+        },
+        "NamedArgType": {
+            "description": "a type name indicating the required type for a named argument to a transform invoked in the form of a function",
+            "oneOf": [
+                { "$ref": "#/definitions/JSONType" },
+                {
+                    "type": "string",
+                    "enum": [ "pointer" ],
+                    "valueDocumentation": {
+                        "pointer": {
+                            "description": "a JSON-compatible string that should be interpreted as a data-pointer"
+                        }
+                    }
+                }
+            ]
+        },
+        "RemainingArgType": {
+            "description": "a type name representing the arbitrary list of anonymous arguments to a transform invoked in the form of a function after any of the named arguments",
+            "description": "a name for a type that can be used as a transform argument when invoked in the form of a function",
+            "type": "string",
+            "enum": [ "remaining" ],
+            "valueDocumentation": {
+                "remaining": {
+                    "description": "a meta-type that refers to all remaining arguments (from the current position to the end)",
+                    "notes": [
+                        "This like an ellipse (...) mark or *args (in Python) when given in a function signature.",
+                        "It is not possible to indicate the exact types of these arguments; the type expectations are purely implementation specific."
+                    ]
+                }
+            }
+        },
+        "BaseFunctionArg": {
+            "description": "a base (abstract) description of a function argument",
+            "allOf": [
+                {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "description": "the type of the argument expected by the functional form of a tranform",
+                            "type": "string"
+                        }
+                    },
+                    "required": [ "type" ]
+                },
+                { "$ref": "http://mgi.nist.gov/mgi-json-schema/v0.1#/definitions/Documentation" }
+            ]
+        },
+        "NamedArg": {
+            "description": "a transform function argument that has a name and expected position in the function signature.",
+            "notes": [
+                "A NamedArg instance may not appear after the occurance of a RemainingArg instance in a argv_supported list."
+            ],
+            "allOf": [
+                { "$ref": "#/definitions/BaseFunctionArg" },
+                {
+                    "properties": {
+                        "type": { "$ref": "#/definitions/NamedArgType" },
+                        "name": { 
+                            "description": "the name to assign to this argument",
+                            "type": "string"
+                        },
+                        "required": {
+                            "description": "an indication of whether this argument must be provided for this transform to be invoked",
+                            "notes": [
+                                "if true, the transform can only be invoked in function form"
+                            ],
+                            "type": "boolean",
+                            "default": false
+                        }
+                    }
+                }
+            ]
+        },
+        "RemainingArg": {
+            "description": "the list of anonymous transform function arguments that may appear after named arguments",
+            "notes": [
+                "A RemainingArg instance must only appear as the last item in an argv_supported list."
+            ],
+            "allOf": [
+                { "$ref": "#/definitions/BaseFunctionArg" },
+                {
+                    "properties": {
+                        "type": { "$ref": "#/definitions/RemainingArgType" },
+                        "min_occurs": { 
+                            "description": "the minimum number of unnamed arguments required by the transform",
+                            "notes": [
+                                "if not 0, the transform can only be invoked in function form"
+                            ],
+                            "type": "integer",
+                            "default": 0
+                        }
+                    }
+                }
+            ]
+        },
+        "FunctionArg": {
+            "description": "a description of a transform argument that can be supplied when the transform is invoked in the form of a function",
+            "oneOf": [
+                { "$ref": "#/definitions/NamedArg" },
+                { "$ref": "#/definitions/RemainingArg" }
+            ]
+        },
+        "LiteralTransform": {
+            "description": "a type of transform that emits a constant value, regardless of the input",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                {
+                    "properties": {
+                        "$type": {
+                            "enum": [ "literal" ] 
+                        },
+                        "value": {
+                            "description": "The literal value that the transform should return",
+                            "$ref": "#/definitions/AnyType" 
+                        }
+                    },
+                    "required": [ "$type", "value" ]
+                }
+            ]
+        },
+        "NativeTransform": {
+            "description": "a type of transform that calls an internal (implementation-specific) function to apply the transform",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                {
+                    "properties": {
+                        "$type": {
+                            "enum": [ "native" ] 
+                        },
+                        "impl": {
+                            "description": "the qualified name for the implementing function, including any namespaces, that is called when this transform is applied.",
+                            "notes": [ 
+                                "a $ at the start of the name is short-hand for the namespace or package that contains standard functions that come with the implementation of the transform engine implementation.",
+                                "the implementation must take care to restrict the execution of native implementations in light of system security.  In particular, this must not allow a stylesheet to direct the execution of an arbitrary function in the native language."
+                            ],
+                            "type": "string"
+                        },
+                        "args": {
+                            "description": "an array of data to pass as extra arguments to the native implementation",
+                            "type": "array"
+                        },
+                        "argv_supported": {
+                            "description": "a specification of arguments that can be passed to the transform when invoked in function form",
+                            "notes": [
+                                "if any argument is defined as required, then the transform can only be invoked in function form"
+                            ],
+                            "comments": [
+                                "at the moment, I believe this property is only for documentation purposes"
+                            ],
+                            "type": "array",
+                            "items": { "$ref": "#/definitions/FunctionArg" }
+                        }
+                    },
+                    "required": [ "$type", "impl" ]
+                }
+            ]
+        },
+        "ExtractTransform": {
+            "description": "",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["extract"]
+                        },
+                        "select": {
+                            "description": "a data pointer to the JSON data to extract from the input.",
+                            "notes": [
+                                "the pointer may include prefix which can be a registered prefix that maps to another data pointer to use as a base",
+                                "a prefix set to '$input' (the default if none is given) instructs that the pointer should be applied to the input document data",
+                                "a prefix set to '$context' instructs that the pointer should be applied to the context data"
+                            ],
+                            "type": "string"
+                        }
+                    },
+                    "required": [ "$type", "select" ]
+                }
+            ]
+        },
+        "ApplyTransform": {
+            "description":  "a transform that applies another transform with different data set as the current input data",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                {
+                    "properties": {
+                        "$type": {
+                            "enum": ["apply"]
+                        },
+                        "transform": {
+                            "description": "the name of the transform to apply to the specified input data"
+                        },
+                        "input": {
+                            "description": "a specification of the data to transform",
+                            "notes": [
+                                "The value can be one of several forms for different ways of providing or refering to the input data:",
+                                "a transform object -- a JSON object will be assumed to be an anonymous transform whose out put will be the input to this transform.",
+                                "a transform invoked as a function -- a string that contains an open or closed parenthesis will be assumed to be a functional transform invocation (although an error is raised if the string does not match the function pattern, f(arg, ...).  The output of executing the function will be used as the input to this transform",
+                                "a transform name -- a string that contains only legal characgters used for naming a transform (i.e. excluding (,), and /) will be interpreted as the name of a defined transform that whose output, when invoked, should be used as the input to this transform.",
+                                "a data pointer -- a string that contains a / or does not match to the name of a registered transform is assumed to be a data pointer.  This pointer will be applied to its target (the current document fragment, the context data, or an input argument list) to extract the data to be used as input to this transform.",
+                                "If a value is not provide, the default is $in:, i.e. the current input data."
+                            ],
+                            "default": "$in:"
+                        },
+                        "args": {
+                            "description": "the list of arguments to pass to the transform",
+                            "type": "array"
+                        }
+                    },
+                    "require": [ "transform" ]
+                }
+            ]
+        },
+        "CallableTransform": {
+            "description": "a transform that can be used to turn other Tranform types into transforms that can be called in function form.",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["callable"]
+                        },
+                        "transform_tmpl": {
+                            "description": "a JSON template for transform configuration that will provide the implementation for the callable version",
+                            "notes": [
+                            ],
+                            "type": "object"
+                        },
+                        "conf_args_index": {
+                            "description": "an ordered list of argument indexes for selecting which arguments given to the function should be used to configure the underlying transform at resolve time.",
+                            "type": "array",
+                            "items": { "type": "integer" }
+                        },
+                        "args_index": {
+                            "description": "an ordered list of argument indexes for selecting which arguments given to the function should be passed to the underlying transform at transform time",
+                            "type": "array",
+                            "items": { "type": "integer" }
+                        },
+                        "argv_supported": {
+                            "description": "a specification of arguments that can be passed to the transform when invoked in function form",
+                            "notes": [
+                                "if any argument is defined as required, then the transform can only be invoked in function form"
+                            ],
+                            "comments": [
+                                "at the moment, I believe this property is only for documentation purposes"
+                            ],
+                            "type": "array",
+                            "items": { "$ref": "#/definitions/FunctionArg" }
+                        }
+                    },
+                    "required": [ "$type", "transform_tmpl", "conf_args_index" ]
+                }
+            ]
+        },
+        "ForEachTransform": {
+            "description": "a transform that will apply a specified transform to each property in the input object.",
+            "notes": [
+                "The data delivered to the transform will be a two-item array containing the property name and the value."
+            ],
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["callable"]
+                        },
+                        "propmap": {
+                            "description": "the transform to apply to each name-value array pair representing each property in the target object",
+                            "oneOf": [
+                                { 
+                                    "description": "a text-based reference to a transform",
+                                    "type": "string" 
+                                },
+                                {
+                                    "description": "a transform description object",
+                                    "$ref": "#/definitions/Transform"
+                                }
+                            ]
+                        },
+                        "strict": {
+                            "description": "if true, fail if the input data is not an object",
+                            "type": "boolean",
+                            "default": "false"
+                        }
+                    }
+                }
+            ]
+        },
+        "MapTransform": {
+            "description": "a transform that applies a transform on each of elements of an input array and then combines them with a join transform",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["map"]
+                        },
+                        "itemmap": {
+                            "description": "the transform to apply to each element of the array",
+                            "oneOf": [
+                                { 
+                                    "description": "a text-based reference to a transform",
+                                    "type": "string" 
+                                },
+                                {
+                                    "description": "a transform description object",
+                                    "$ref": "#/definitions/Transform"
+                                }
+                            ]
+                        },
+                        "strict": {
+                            "description": "if true, fail if the input data is not an array",
+                            "type": "boolean",
+                            "default": "false"
+                        }
+                    }
+                }
+            ]
+        },
+        "JSONTransform": {
+            "description": "converts input into a new JSON structure",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["json"]
+                        },
+                        "content": {
+                            "description": "the skeleton of the output JSON data structure containing transform token where input data should be inserted.",
+                            "$ref": "#/definitions/AnyType"
+                        }
+                    },
+                    "required": [ "$type", "content" ]
+                }
+            ]
+        },
+        "StringTemplateTransform": {
+            "description": "",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["stringtemplate"]
+                        },
+                        "content": {
+                            "description": "a string containing template tokens where input data should be inserted",
+                            "type": "string"
+                        }
+                    },
+                    "required": [ "$type", "content" ]
+                }
+            ]
+        },
+        "ChooseTransform": {
+            "description": "a transform that supports an if-elseif-else control structure for applying a choice of transforms depending on conditions.",
+            "allOf": [
+                { "$ref": "#/definitions/Transform" },
+                { 
+                    "properties": {
+                        "$type": {
+                            "enum": ["choose"]
+                        },
+                        "cases": {
+                            "type": "array",
+                            "description": "an ordered array of tests and transform pairs representing the different possible transforms to apply; the first test that produces a true result determines the transform to apply",
+                            "items": {
+                                "type": "object",
+                                "description": "a test-transform pair: if the the test transform returns a true result, the transform should be applied",
+                                "properties": {
+                                    "test": {
+                                        "description": "a transform to apply to determine if this case should apply; if this returns a true result, the transform given in the transform property should be applied and its result returned as the overall result of this choose transform.",
+                                        "notes": [
+                                            "If the test transform returns a result other than a boolean, it will be converted to one as if sent through the tobool() transform"
+                                        ],
+                                        "oneOf": [
+                                            { 
+                                                "type": "object",
+                                                "description": "an anonymous transform configuration or a {$val} directive"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "description": "a named transform (possibly in function form) or a data pointer"
+                                            }
+                                        ]
+                                    },
+                                    "transform": {
+                                        "description": "the transform to apply if the test returns a true result.",
+                                        "notes": [
+                                            "If not provided, a value of '$in:' is assumed; that is, the input data will be passed unchanged"
+                                        ],
+                                        "oneOf": [
+                                            { 
+                                                "type": "object",
+                                                "description": "an anonymous transform configuration or a {$val} directive"
+                                            },
+                                            {
+                                                "type": "string",
+                                                "description": "a named transform (possibly in function form) or a data pointer"
+                                            }
+                                        ]
+                                    }
+                                }
+                            },
+                            "required": [ "test" ]
+                        },
+                        "default": {
+                            "description": "the transform to apply if none of the tests return a true result",
+                            "oneOf": [
+                                { 
+                                    "type": "object",
+                                    "description": "an anonymous transform configuration or a {$val} directive"
+                                },
+                                {
+                                    "type": "string",
+                                    "description": "a named transform (possibly in function form) or a data pointer"
+                                }
+                            ]
+                        }
+                    },
+                    "required": [ "$type", "default" ]
+                }
+            ]
+        },
+        "AnyType": {
+            "description": "a type representing a union of all primitive types",
+            "type": [ "array", "boolean", "integer", "number", 
+                      "null", "object", "string" ]
+        }
+    },
+
+    "$ref": "#/definitions/Transform" 
+}
