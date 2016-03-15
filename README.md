@@ -62,6 +62,14 @@ the usnistgov/mgi-resmd repository and into its own usnistgov/jsont
 repository.  Please see usnistgov/mgi-resmd for jq-based modules and
 scripts for JSON transformation.  
 
+### Regarding the jsont name
+
+Please note that the author recognizes the existence of other software
+tools with the same (or similar) name, jsont, with implementations in
+various languages but with similar goals.  There was no intention to
+imply an association with those other tools, but rather evoke a
+similarity to XSLT.  
+
 ## Dependencies
 
 This package has the following dependencies:
@@ -81,3 +89,15 @@ Currently, tests only exist for the JSON schemas, examples, and
 tools.  py.test is used to execute these tests.   To run, change into
 the root directory of this distribution and type "py.test".  
 
+## Disclaimer
+
+This repository serves as a platform for open community collaboration
+to enable and encourage greater sharing of and interoperability
+between research data from around the world.  Except where otherwise
+noted, the content and software within this repository should be
+considered a work in progress, may contain input from non-governmental
+contributors, and thus should not be construed to represent the
+position nor have the endorsement the United States government.  
+
+The content and software contained in this repository is provided "AS
+IS" with no warrenty of any kind.  
